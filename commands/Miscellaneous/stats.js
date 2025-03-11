@@ -1,4 +1,4 @@
-const { version } = require("discord.js-selfbot-v13");
+const { version } = require("../../index");
 const { codeBlock } = require("@discordjs/builders");
 const { DurationFormatter } = require("@sapphire/time-utilities");
 const si = require("systeminformation");
