@@ -1,13 +1,19 @@
-const { Intents } = require("discord.js-selfbot-v13");
+const { Intents } =
+  process.env.USERTYPE === "BOT"
+    ? require("discord.js")
+    : require("discord.js-selfbot-v13");
 
 // unused as its a selfbot
 const myIntents = new Intents();
 myIntents.add(
+  Intents.FLAGS.DIRECT_MESSAGE_TYPING,
+  Intents.FLAGS.DIRECT_MESSAGE_REACTIONS,
   Intents.FLAGS.GUILDS,
-  Intents.FLAGS.GUILD_EMOJIS_AND_STICKERS,
+  Intents.FLAGS.GUILD_MEMBERS,
   Intents.FLAGS.GUILD_MESSAGES,
-  Intents.FLAGS.DIRECT_MESSAGES,
-  Intents.FLAGS.GUILD_MEMBERS
+  Intents.FLAGS.GUILD_MESSAGE_REACTIONS,
+  1 << 7,
+  1 << 15
 );
 
 const config = {
