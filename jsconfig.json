@@ -5,7 +5,8 @@
       "@config/*": ["config/*"],
       "@mongo/*": ["mongo/*"],
       "@modules/*": ["modules/*"],
-      "@openai/*": ["openai/*"]
+      "@openai/*": ["openai/*"],
+      "@voice/*": ["voice/*"]
     },
     "moduleResolution": "node"
   }
