@@ -14,6 +14,28 @@ function startTyping(message) {
   }, 1000);
 }
 
+function determineToken() {
+  const tokenMap = {
+    METRIX: process.env.TOKEN_METRIX,
+    PSILOCIN: process.env.TOKEN_PSILOCIN,
+    BOTTN: process.env.TOKEN_BOTTN,
+  };
+
+  return tokenMap[process.env.TOKEN];
+}
+
+function determineLibrary() {
+  const userLibraries = {
+    [process.env.TOKEN_PSILOCIN]: "discord.js-selfbot-v13",
+    [process.env.TOKEN_BOTTN]: "discord.js-selfbot-v13",
+    [process.env.TOKEN_METRIX]: "discord.js",
+  };
+
+  const libraryName = userLibraries[determineToken()];
+
+  return require(libraryName);
+}
+
 function isValidLog(log) {
   // Ensure log is an object
   if (typeof log !== "object" || log === null) return false;
@@ -219,4 +241,6 @@ module.exports = {
   isValidLog,
   hasValidProps,
   urlToBase64,
+  determineToken,
+  determineLibrary,
 };

@@ -1,7 +1,6 @@
-const { Intents } =
-  process.env.USERTYPE === "BOT"
-    ? require("discord.js")
-    : require("discord.js-selfbot-v13");
+const { determineLibrary, determineToken } = require("@modules/utils");
+
+const { Intents } = determineLibrary();
 
 // unused as its a selfbot
 const myIntents = new Intents();
@@ -27,7 +26,7 @@ const config = {
   ],
 
   // Unused as its a selfbot
-  intents: myIntents,
+  intents: process.env.TOKEN === "METRIX" ? myIntents : null,
 
   availableModels: [
     "gpt-3.5-turbo",

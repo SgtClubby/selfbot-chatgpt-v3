@@ -2,11 +2,9 @@ require("dotenv").config();
 require("module-alias/register");
 
 // Load up the discord.js library
+const { determineLibrary, determineToken } = require("@modules/utils");
+const { Client, Collection, version } = determineLibrary();
 
-const { Client, Collection, version } =
-  process.env.USERTYPE === "BOT"
-    ? require("discord.js")
-    : require("discord.js-selfbot-v13");
 const fs = require("fs");
 const path = require("path");
 const { partials, permLevels, intents } = require("@config/config");
@@ -86,13 +84,9 @@ var walk = function (dir, done) {
 
   client.on("threadCreate", (thread) => thread.join());
 
-  logger.log(`Using USER: ${process.env.USERTYPE}`, "debug");
+  logger.log(`Using USER: ${process.env.TOKEN}`, "debug");
 
-  client.login(
-    process.env.USERTYPE === "BOT"
-      ? process.env.TOKEN_METRIX
-      : process.env.TOKEN_PSILOCIN
-  );
+  client.login(determineToken());
 })();
 
 module.exports = { version };

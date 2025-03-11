@@ -4,13 +4,15 @@ const logger = require("../modules/Logger.js");
 let currentMouth = "_"; // default mouth
 let currentEmotionText = "I am feeling neutral."; // default emotion text
 let eyesClosedDuration = 1000;
-let eyesOpenDuration = 42000;
-let emotionUpdateInterval = 600_000;
+let eyesOpenDuration = 30_000;
+let emotionUpdateInterval = 1_800_000;
 
 // Returns a random integer between min and max (inclusive).
 function randomNumber(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Mapping each feeling to a creative Unicode mouth character and a suffix.
 const feelingAttributes = {
@@ -59,20 +61,48 @@ async function updateEmotion(client) {
 // Handles the continuous blink routine.
 // It displays the face with the appended emotion text. The eyes alternate between open and closed.
 async function blink(client) {
-  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  // Blink: eyes closed.
+  await client.user.setActivity(
+    `( ͡- ${currentMouth} ͡-) ${currentEmotionText}`,
+    { type: "CUSTOM" }
+  );
+  await sleep(eyesClosedDuration);
+  await client.user.setActivity(
+    `( ͡👁️${currentMouth} ͡👁️) ${currentEmotionText}`,
+    { type: "CUSTOM" }
+  );
+}
+
+// Cursed blink, unsynced blink, so one eye closes and then the other, and then the other open and then the other.
+async function cursedBlink(client) {
+  // Blink: one eye closes.
+  await client.user.setActivity(
+    `( ͡- ${currentMouth} ͡👁️) ${currentEmotionText}`,
+    { type: "CUSTOM" }
+  );
+  await sleep(eyesClosedDuration);
+  // Blink: the other eye closes.
+  await client.user.setActivity(
+    `( ͡👁️${currentMouth} ͡-) ${currentEmotionText}`,
+    { type: "CUSTOM" }
+  );
+  await sleep(eyesClosedDuration);
+  // Eyes open version.
+  await client.user.setActivity(
+    `( ͡👁️${currentMouth} ͡👁️) ${currentEmotionText}`,
+    { type: "CUSTOM" }
+  );
+}
+
+async function randomBlink(client) {
   while (true) {
-    // Eyes open version.
-    await client.user.setActivity(
-      `( ͡👁️${currentMouth} ͡👁️) ${currentEmotionText}`,
-      { type: "CUSTOM" }
-    );
+    const rng = Math.random();
+    if (rng > 0.15) {
+      blink(client);
+    } else {
+      cursedBlink(client);
+    }
     await sleep(eyesOpenDuration);
-    // Blink: eyes closed.
-    await client.user.setActivity(
-      `( ͡- ${currentMouth} ͡-) ${currentEmotionText}`,
-      { type: "CUSTOM" }
-    );
-    await sleep(eyesClosedDuration);
   }
 }
 
@@ -83,10 +113,39 @@ function emotionHandler(client) {
   // Then update emotion every 2 minutes (120000 ms).
   setInterval(() => updateEmotion(client), emotionUpdateInterval);
   // Start the continuous blink loop.
-  blink(client);
+  randomBlink(client);
+}
+
+async function acceptPendingFriendRequests(client) {
+  try {
+    client.relationships.incomingCache.each(async (user) => {
+      try {
+        await client.relationships.addFriend(user.id);
+        logger.log(
+          `Accepted offline friend request from user ID: ${user.id}`,
+          "log"
+        );
+      } catch (error) {
+        logger.log(
+          `Failed to accept offline friend request from user ID: ${user.id}: ${error}`,
+          "error"
+        );
+      }
+    });
+  } catch (error) {
+    logger.log("Error polling friend requests: " + error, "error");
+  }
+}
+
+function friendRequestPoll(client) {
+  acceptPendingFriendRequests(client);
+
+  // Run every 30 seconds (adjust as needed)
+  setInterval(() => acceptPendingFriendRequests(client), 300000);
 }
 
 module.exports = async (client) => {
   logger.log(`Logged in as ${client.user.tag}!`, "ready");
   emotionHandler(client);
+  process.env.TOKEN == "METRIX" ? null : friendRequestPoll(client);
 };
