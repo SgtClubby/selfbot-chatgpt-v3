@@ -1,12 +1,9 @@
-const {
-  startTyping,
-  stopTyping,
-  download,
-  extractImgID,
-} = require("@modules/utils.js");
-const openai = require("@openai/openai");
+// selfbot-chatgpt-v3/openai/createImage.js
+
+const { startTyping, stopTyping, download, extractImgID } = require("@modules/utils.js");
 const logger = require("@modules/Logger");
 async function createImage(prompt, message, number) {
+  const openai = await import(".openai.mjs").then((m) => m.default);
   logger.log(`Image creation called with prompt: ${prompt}`, "debug");
 
   const imagePrompt = {
@@ -42,9 +39,7 @@ async function createImage(prompt, message, number) {
     }
   } catch (e) {
     console.error(e.response?.data?.error?.message || e.message);
-    message.channel.send(
-      `Error: ${e.response?.data?.error?.message || e.message}`
-    );
+    message.channel.send(`Error: ${e.response?.data?.error?.message || e.message}`);
   } finally {
     stopTyping();
   }

@@ -1,10 +1,11 @@
+// selfbot-chatgpt-v3/openai/createChatCompletion.js
+
 const { startTyping, stopTyping } = require("@modules/utils");
 const { addToContext } = require("@mongo/mongo");
-const openai = require("@openai/openai");
 const logger = require("@modules/Logger");
 
-
 async function createChatCompletion(message, context, model, guildId) {
+  const openai = await import("./openai.mjs").then((m) => m.default);
   const mappedContext = context.map(({ content, role }) => ({ content, role }));
 
   startTyping(message);
@@ -88,25 +89,19 @@ async function createChatCompletion(message, context, model, guildId) {
             const codeBlockBoundary = text.match(/```/g);
             if (codeBlockBoundary) {
               insideCodeBlock =
-                codeBlockBoundary.length % 2 !== 0
-                  ? !insideCodeBlock
-                  : insideCodeBlock;
+                codeBlockBoundary.length % 2 !== 0 ? !insideCodeBlock : insideCodeBlock;
             }
             // Fixed: Use boldBlockBoundary instead of codeBlockBoundary
             const boldBlockBoundary = text.match(/\/\*\*\//g);
             if (boldBlockBoundary) {
               insideBoldBlock =
-                boldBlockBoundary.length % 2 !== 0
-                  ? !insideBoldBlock
-                  : insideBoldBlock;
+                boldBlockBoundary.length % 2 !== 0 ? !insideBoldBlock : insideBoldBlock;
             }
 
             const italicBlockBoundary = text.match(/\/\*\*\//g);
             if (italicBlockBoundary) {
               insideItalicBlock =
-                italicBlockBoundary.length % 2 !== 0
-                  ? !insideItalicBlock
-                  : insideItalicBlock;
+                italicBlockBoundary.length % 2 !== 0 ? !insideItalicBlock : insideItalicBlock;
             }
 
             const currentTime = Date.now();
@@ -114,8 +109,7 @@ async function createChatCompletion(message, context, model, guildId) {
               !insideCodeBlock &&
               !insideBoldBlock &&
               !insideItalicBlock &&
-              (accumulatedContent.length >=
-                discordCharacterLimit - safetyBuffer ||
+              (accumulatedContent.length >= discordCharacterLimit - safetyBuffer ||
                 currentTime - lastUpdateTime >= updateInterval)
             ) {
               if (

@@ -42,7 +42,7 @@ exports.run = async (client, message, args, level, guildId) => {
   ) {
     logger.log("Using extended system prompt for GPT-4", "debug");
     context.unshift({
-      role: "system",
+      role: "developer",
       content: [
         {
           type: "text",

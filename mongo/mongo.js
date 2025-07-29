@@ -98,17 +98,17 @@ class MongoDB {
     // check if the context already exists
     const existing = await Context.findOne({ guildId, active: true });
     if (existing) {
+      await MongoDB.clearContextByGuildId(guildId);
       logger.log(
         `Guild ${guildId} already has context, creating new...`,
         "debug"
       );
-      await MongoDB.clearContextByGuildId(guildId);
     }
 
     const newContext = new Context({
       _id: generateContextId(),
       guildId,
-      messages: log.context,
+      messages: log.messages,
       contextId: generateContextId(),
       active: true,
       model: log.model,

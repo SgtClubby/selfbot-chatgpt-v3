@@ -34,7 +34,6 @@ async function joinVoiceChannelAndListen(message) {
 
 // Capture voice and save it
 async function captureAudio(connection, userId) {
-  console.log(userId);
   return new Promise((resolve, reject) => {
     const receiver = connection.receiver;
 

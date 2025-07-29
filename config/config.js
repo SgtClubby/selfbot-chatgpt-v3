@@ -1,4 +1,6 @@
-const { determineLibrary, determineToken } = require("@modules/utils");
+// selfbot-chatgpt-v3/config/config.js
+
+const { determineLibrary, determineMode, getAvailableModels } = require("@modules/utils");
 
 const { Intents } = determineLibrary();
 
@@ -11,9 +13,13 @@ myIntents.add(
   Intents.FLAGS.GUILD_MEMBERS,
   Intents.FLAGS.GUILD_MESSAGES,
   Intents.FLAGS.GUILD_MESSAGE_REACTIONS,
+  Intents.FLAGS.GUILD_PRESENCES,
   1 << 7,
   1 << 15
 );
+
+const mode = determineMode();
+const intents = mode === "METRIX" ? myIntents : null;
 
 const config = {
   // Bot admins
@@ -26,20 +32,28 @@ const config = {
   ],
 
   // Unused as its a selfbot
-  intents: process.env.TOKEN === "METRIX" ? myIntents : null,
+  intents,
 
-  availableModels: [
-    "gpt-3.5-turbo",
-    "gpt-4",
-    "gpt-4-turbo",
-    "gpt-4o",
-    "gpt-4o-mini",
-    "o3-mini",
-    "gpt-4o-2024-08-06",
-    "chatgpt-4o-latest",
-  ],
+  availableModels: async () => {
+    try {
+      return await getAvailableModels();
+    } catch (error) {
+      console.error("Error fetching available models:", error);
+      return [];
+    }
+  },
 
   partials: ["CHANNEL", "MESSAGE", "REACTION"],
+
+  emotions: {
+    eyeOpen: " ͡👁️",
+    eyeClose: " ͡—",
+    eyesClosedDuration: 600,
+    eyesOpenDuration: 15000,
+    activityType: "WATCHING",
+    emotionUpdateInterval: 15000,
+    mouth_expressions: ["◡", "︵", "ʖ̯", "O", "‿", "—", "⌣", "_", "ʖ", "O", "•"],
+  },
 
   defaultSettings: {
     prefix: "?",
@@ -65,13 +79,9 @@ const config = {
       check: (message) => {
         try {
           const modRole = message.guild.roles.cache.find(
-            (r) =>
-              r.name.toLowerCase() === message.settings.modRole.toLowerCase()
+            (r) => r.name.toLowerCase() === message.settings.modRole.toLowerCase()
           );
-          if (
-            modRole &&
-            message.member.roles.cache.some((role) => role.id === modRole.id)
-          )
+          if (modRole && message.member.roles.cache.some((role) => role.id === modRole.id))
             return true;
         } catch (e) {
           return false;
@@ -84,13 +94,9 @@ const config = {
       check: (message) => {
         try {
           const adminRole = message.guild.roles.cache.find(
-            (r) =>
-              r.name.toLowerCase() === message.settings.adminRole.toLowerCase()
+            (r) => r.name.toLowerCase() === message.settings.adminRole.toLowerCase()
           );
-          if (
-            adminRole &&
-            message.member.roles.cache.some((role) => role.id === adminRole.id)
-          )
+          if (adminRole && message.member.roles.cache.some((role) => role.id === adminRole.id))
             return true;
         } catch (e) {
           return false;

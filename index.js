@@ -84,9 +84,9 @@ var walk = function (dir, done) {
 
   client.on("threadCreate", (thread) => thread.join());
 
-  logger.log(`Using USER: ${process.env.TOKEN}`, "debug");
-
-  client.login(determineToken());
+  client.login(determineToken()).then(() => {
+    logger.log(`Using: ${process.env.TOKEN}`, "debug");
+  });
 })();
 
 module.exports = { version };

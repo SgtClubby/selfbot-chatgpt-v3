@@ -1,3 +1,5 @@
+// selfbot-chatgpt-v3/modules/utils.js
+
 const fs = require("fs");
 const request = require("request");
 
@@ -14,6 +16,49 @@ function startTyping(message) {
   }, 1000);
 }
 
+const filterModels = (models, excludeTerms = []) => {
+  const datePattern = /\d{4}-\d{2}-\d{2}/;
+  const gpt3datePattern = /\d{4}/;
+  return models.filter(
+    (model) =>
+      !excludeTerms.some((term) => model.includes(term)) &&
+      !datePattern.test(model) &&
+      !gpt3datePattern.test(model)
+  );
+};
+
+async function getAvailableModels() {
+  const openai = await import("../openai/openai.mjs").then((m) => m.default);
+  return openai.listModels().then((response) => {
+    const data = response.data.data.map((model) => model.id);
+
+    // Filter out models that contain "instruct", "preview", or "whisper"
+    const excludeTerms = [
+      "instruct",
+      "preview",
+      "whisper",
+      "text-embedding",
+      "omni",
+      "tts",
+      "gpt-image",
+      "babbage",
+      "codex",
+      "dall-e",
+      "davinci",
+      "transcribe",
+      "deep-research",
+    ];
+    const filteredData = filterModels(data, excludeTerms);
+
+    // Sort the models alphabetically
+    filteredData.sort((a, b) => a.localeCompare(b));
+
+    // Add the default model at the top
+    filteredData.unshift("gpt-4o");
+    return filteredData;
+  });
+}
+
 function determineToken() {
   const tokenMap = {
     METRIX: process.env.TOKEN_METRIX,
@@ -22,6 +67,17 @@ function determineToken() {
   };
 
   return tokenMap[process.env.TOKEN];
+}
+
+function determineMode() {
+  const tokenMap = {
+    METRIX: process.env.TOKEN_METRIX,
+    PSILOCIN: process.env.TOKEN_PSILOCIN,
+    BOTTN: process.env.TOKEN_BOTTN,
+  };
+
+  // Reverse lookup: Find the key (bot name) based on the token
+  return Object.keys(tokenMap).find((key) => tokenMap[key] === process.env.TOKEN);
 }
 
 function determineLibrary() {
@@ -68,12 +124,7 @@ function isValidLog(log) {
 
     // Validate content inside each message
     for (const content of message.content) {
-      if (
-        typeof content !== "object" ||
-        content.type !== "text" ||
-        !content.text ||
-        !content._id
-      ) {
+      if (typeof content !== "object" || content.type !== "text" || !content.text || !content._id) {
         return false;
       }
     }
@@ -146,8 +197,7 @@ function splitMessage(message) {
 
 function generateContextId(length = 12) {
   let result = "";
-  const characters =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   const charactersLength = characters.length;
   for (let i = 0; i < length; i++) {
     result += characters.charAt(Math.floor(Math.random() * charactersLength));
@@ -167,35 +217,22 @@ function hasValidProps(props, fileName) {
   const requiredHelpProps = ["name", "category", "description", "usage"];
   for (const prop of requiredHelpProps) {
     if (typeof props.help[prop] !== "string" || !props.help[prop].trim()) {
-      throw new Error(
-        `Command "${fileName}" has an invalid or missing 'help.${prop}' property.`
-      );
+      throw new Error(`Command "${fileName}" has an invalid or missing 'help.${prop}' property.`);
     }
   }
 
   // Validate `conf` properties
   if (typeof props.conf.enabled !== "boolean") {
-    throw new Error(
-      `Command "${fileName}" has an invalid 'conf.enabled' (must be boolean).`
-    );
+    throw new Error(`Command "${fileName}" has an invalid 'conf.enabled' (must be boolean).`);
   }
   if (typeof props.conf.guildOnly !== "boolean") {
-    throw new Error(
-      `Command "${fileName}" has an invalid 'conf.guildOnly' (must be boolean).`
-    );
+    throw new Error(`Command "${fileName}" has an invalid 'conf.guildOnly' (must be boolean).`);
   }
   if (!Array.isArray(props.conf.aliases)) {
-    throw new Error(
-      `Command "${fileName}" has an invalid 'conf.aliases' (must be an array).`
-    );
+    throw new Error(`Command "${fileName}" has an invalid 'conf.aliases' (must be an array).`);
   }
-  if (
-    typeof props.conf.permLevel !== "string" ||
-    !props.conf.permLevel.trim()
-  ) {
-    throw new Error(
-      `Command "${fileName}" has an invalid or missing 'conf.permLevel' property.`
-    );
+  if (typeof props.conf.permLevel !== "string" || !props.conf.permLevel.trim()) {
+    throw new Error(`Command "${fileName}" has an invalid or missing 'conf.permLevel' property.`);
   }
 }
 
@@ -229,6 +266,12 @@ async function urlToBase64(url) {
   }
 }
 
+function randomNumber(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 module.exports = {
   startTyping,
   stopTyping,
@@ -243,4 +286,8 @@ module.exports = {
   urlToBase64,
   determineToken,
   determineLibrary,
+  randomNumber,
+  sleep,
+  determineMode,
+  getAvailableModels,
 };
