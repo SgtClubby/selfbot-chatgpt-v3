@@ -1,45 +1,60 @@
 // selfbot-chatgpt-v3/openai/createImage.js
 
-const { startTyping, stopTyping, download, extractImgID } = require("@modules/utils.js");
+const { startTyping, stopTyping, download, extractImgID } = require("@modules/utils");
 const logger = require("@modules/Logger");
+
+/**
+ * Creates images using OpenAI DALL-E API
+ *
+ * @param {string} prompt - Image generation prompt
+ * @param {Object} message - Discord message object
+ * @param {number} number - Number of images to generate (1-5)
+ */
 async function createImage(prompt, message, number) {
-  const openai = await import(".openai.mjs").then((m) => m.default);
+  const openai = await import("./openai.mjs").then((m) => m.default);
+
   logger.log(`Image creation called with prompt: ${prompt}`, "debug");
 
-  const imagePrompt = {
-    prompt,
-    n: number,
-    size: "512x512",
-    response_format: "url",
-  };
-
   startTyping(message);
-  try {
-    const res = await openai.createImage(imagePrompt);
 
-    for (const image of res.data.data) {
+  try {
+    // Create images with DALL-E
+    const response = await openai.images.generate({
+      prompt: prompt,
+      n: number,
+      size: "1024x1024", // Updated to use newer size option
+      response_format: "url",
+    });
+
+    // Process each generated image
+    for (const image of response.data) {
       let filename = extractImgID(image.url);
+
       if (!filename) {
-        filename = `${new Date().getTime()}.png`;
+        filename = `dalle_${Date.now()}.png`;
       }
 
-      // Wrap the download function in a promise so we can await it.
-      await new Promise((resolve, reject) => {
-        download(image.url, filename, (err) => {
-          if (err) {
-            return reject(err);
-          }
-          resolve();
+      try {
+        // Download and send the image
+        await new Promise((resolve, reject) => {
+          download(image.url, filename, (err) => {
+            if (err) reject(err);
+            else resolve();
+          });
         });
-      });
 
-      await message.channel.send({
-        files: [{ attachment: `/home/ftpuser/chatgpt/${filename}` }],
-      });
+        await message.channel.send({
+          files: [{ attachment: `/home/ftpuser/chatgpt/${filename}` }],
+        });
+      } catch (downloadError) {
+        logger.log(`Failed to download/send image: ${downloadError.message}`, "error");
+        await message.channel.send(`Failed to process image: ${downloadError.message}`);
+      }
     }
-  } catch (e) {
-    console.error(e.response?.data?.error?.message || e.message);
-    message.channel.send(`Error: ${e.response?.data?.error?.message || e.message}`);
+  } catch (error) {
+    const errorMessage = error?.error?.message || error?.message || "Unknown error occurred";
+    logger.log(`Image generation error: ${errorMessage}`, "error");
+    await message.channel.send(`Error generating image: ${errorMessage}`);
   } finally {
     stopTyping();
   }

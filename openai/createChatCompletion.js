@@ -4,162 +4,120 @@ const { startTyping, stopTyping } = require("@modules/utils");
 const { addToContext } = require("@mongo/mongo");
 const logger = require("@modules/Logger");
 
+/**
+ * Creates a chat completion using OpenAI API with streaming support
+ *
+ * @param {Object} message - Discord message object
+ * @param {Array} context - Conversation context array
+ * @param {string} model - OpenAI model to use
+ * @param {string} guildId - Discord guild ID
+ */
 async function createChatCompletion(message, context, model, guildId) {
   const openai = await import("./openai.mjs").then((m) => m.default);
-  const mappedContext = context.map(({ content, role }) => ({ content, role }));
+
+  // Map context to proper format for OpenAI API
+  const messages = context.map(({ content, role }) => ({ content, role }));
 
   startTyping(message);
-  let lineTest = ""; // For debugging purposes
+
   try {
-    const response = await openai.createChatCompletion(
-      {
-        model: model,
-        messages: mappedContext,
-        stream: true,
-      },
-      { responseType: "stream" }
-    );
+    // Create chat completion with streaming
+    const stream = await openai.chat.completions.create({
+      model: model,
+      messages: messages,
+      stream: true,
+    });
 
-    // New variable to accumulate the entire response
     let completeResponse = "";
+    let currentMessage = await message.channel.send("Processing...");
+    let currentContent = "";
+    let accumulatedContent = "";
 
-    // Variables for handling Discord message updates
-    let responseContent = ""; // Content for the current Discord message
-    let accumulatedContent = ""; // Buffer for new text before updating the message
-    const discordCharacterLimit = 2000;
-    const safetyBuffer = 100;
+    const DISCORD_CHAR_LIMIT = 2000;
+    const SAFETY_BUFFER = 100;
+    const UPDATE_INTERVAL = 1000;
+
     let lastUpdateTime = Date.now();
-    const updateInterval = 1000; // in milliseconds
-    let jsonBuffer = ""; // For incomplete JSON chunks
     let insideCodeBlock = false;
     let insideBoldBlock = false;
     let insideItalicBlock = false;
-    // Initial reply to indicate processing
-    let reply = await message.channel.send("Processing...");
 
-    // Process each streamed chunk
-    for await (const chunk of response.data) {
-      const lines = chunk
-        .toString()
-        .split("\n")
-        .filter((line) => line.trim() !== "");
+    // Process each chunk from the stream
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content;
 
-      for (const line of lines) {
-        if (line.trim() === "data: [DONE]") {
-          logger.log(`Completed chat completion: ${guildId}`, "debug");
-          // Process any leftover accumulated content before finishing
-          if (accumulatedContent.length > 0) {
-            if (
-              responseContent.length + accumulatedContent.length >
-              discordCharacterLimit - safetyBuffer
-            ) {
-              await reply.edit(responseContent);
-              await message.channel.send(accumulatedContent);
-            } else {
-              responseContent += accumulatedContent;
-              await reply.edit(responseContent);
-            }
-            accumulatedContent = "";
-          }
+      if (!content) continue;
 
-          const messageObject = {
-            role: "assistant",
-            content: [{ text: completeResponse, type: "text" }],
-          };
-          addToContext(guildId, messageObject);
-          stopTyping();
-          return; // Exit the function after completion
+      // Accumulate the complete response
+      completeResponse += content;
+      accumulatedContent += content;
+
+      // Track formatting boundaries to avoid breaking Discord formatting
+      const codeBlockMatches = content.match(/```/g);
+      if (codeBlockMatches) {
+        insideCodeBlock = codeBlockMatches.length % 2 !== 0 ? !insideCodeBlock : insideCodeBlock;
+      }
+
+      const boldMatches = content.match(/\*\*/g);
+      if (boldMatches) {
+        insideBoldBlock = boldMatches.length % 2 !== 0 ? !insideBoldBlock : insideBoldBlock;
+      }
+
+      const italicMatches = content.match(/\*/g);
+      if (italicMatches) {
+        insideItalicBlock = italicMatches.length % 2 !== 0 ? !insideItalicBlock : insideItalicBlock;
+      }
+
+      const currentTime = Date.now();
+      const shouldUpdate =
+        !insideCodeBlock &&
+        !insideBoldBlock &&
+        !insideItalicBlock &&
+        (accumulatedContent.length >= DISCORD_CHAR_LIMIT - SAFETY_BUFFER ||
+          currentTime - lastUpdateTime >= UPDATE_INTERVAL);
+
+      if (shouldUpdate) {
+        const newContentLength = currentContent.length + accumulatedContent.length;
+
+        if (newContentLength > DISCORD_CHAR_LIMIT - SAFETY_BUFFER) {
+          // Send current message and start a new one
+          await currentMessage.edit(currentContent);
+          currentMessage = await message.channel.send(accumulatedContent);
+          currentContent = accumulatedContent;
+        } else {
+          currentContent += accumulatedContent;
+          await currentMessage.edit(currentContent);
         }
 
-        lineTest = line;
-        jsonBuffer += line.replace(/^data: /, "");
-
-        try {
-          const jsonResponse = JSON.parse(jsonBuffer);
-
-          if (jsonResponse.choices[0].delta?.content) {
-            const text = jsonResponse.choices[0].delta.content;
-
-            // Append the new text to the complete response
-            completeResponse += text;
-            // Also update the accumulated content for Discord message editing
-            accumulatedContent += text;
-
-            // Handle code block boundaries
-            const codeBlockBoundary = text.match(/```/g);
-            if (codeBlockBoundary) {
-              insideCodeBlock =
-                codeBlockBoundary.length % 2 !== 0 ? !insideCodeBlock : insideCodeBlock;
-            }
-            // Fixed: Use boldBlockBoundary instead of codeBlockBoundary
-            const boldBlockBoundary = text.match(/\/\*\*\//g);
-            if (boldBlockBoundary) {
-              insideBoldBlock =
-                boldBlockBoundary.length % 2 !== 0 ? !insideBoldBlock : insideBoldBlock;
-            }
-
-            const italicBlockBoundary = text.match(/\/\*\*\//g);
-            if (italicBlockBoundary) {
-              insideItalicBlock =
-                italicBlockBoundary.length % 2 !== 0 ? !insideItalicBlock : insideItalicBlock;
-            }
-
-            const currentTime = Date.now();
-            if (
-              !insideCodeBlock &&
-              !insideBoldBlock &&
-              !insideItalicBlock &&
-              (accumulatedContent.length >= discordCharacterLimit - safetyBuffer ||
-                currentTime - lastUpdateTime >= updateInterval)
-            ) {
-              if (
-                responseContent.length + accumulatedContent.length >
-                discordCharacterLimit - safetyBuffer
-              ) {
-                // Send the current message and start a new one if limit is exceeded
-                await reply.edit(responseContent);
-                reply = await message.channel.send(accumulatedContent);
-                responseContent = accumulatedContent;
-              } else {
-                responseContent += accumulatedContent;
-                await reply.edit(responseContent);
-              }
-              accumulatedContent = ""; // Reset buffer
-              lastUpdateTime = currentTime;
-            }
-          }
-          jsonBuffer = ""; // Clear the buffer after successful parsing
-        } catch (e) {
-          // Likely an incomplete JSON chunk, so continue accumulating in jsonBuffer
-        }
+        accumulatedContent = "";
+        lastUpdateTime = currentTime;
       }
     }
 
-    // Final update for any remaining accumulated content (if the stream ends without [DONE])
+    // Handle any remaining content
     if (accumulatedContent.length > 0) {
-      if (
-        responseContent.length + accumulatedContent.length >
-        discordCharacterLimit - safetyBuffer
-      ) {
-        await reply.edit(responseContent);
+      const newContentLength = currentContent.length + accumulatedContent.length;
+
+      if (newContentLength > DISCORD_CHAR_LIMIT - SAFETY_BUFFER) {
+        await currentMessage.edit(currentContent);
         await message.channel.send(accumulatedContent);
       } else {
-        responseContent += accumulatedContent;
-        await reply.edit(responseContent);
+        currentContent += accumulatedContent;
+        await currentMessage.edit(currentContent);
       }
     }
 
-    // Save the complete response to the DB
+    // Save the complete response to context
     const messageObject = {
       role: "assistant",
       content: [{ text: completeResponse, type: "text" }],
     };
-    addToContext(guildId, messageObject);
+
+    await addToContext(guildId, messageObject);
+    logger.log(`Completed chat completion for guild: ${guildId}`, "debug");
   } catch (error) {
-    stopTyping();
-    logger.log(error?.response?.data?.error?.message || error.message, "error");
-    logger.log(lineTest, "error");
-    message.channel.send("An error occurred: " + error.message);
+    logger.log(error?.message || "Unknown error occurred", "error");
+    await message.channel.send(`An error occurred: ${error?.message || "Unknown error"}`);
   } finally {
     stopTyping();
   }

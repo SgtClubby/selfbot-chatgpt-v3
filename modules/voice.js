@@ -1,3 +1,5 @@
+// selfbot-chatgpt-v3/modules/voice.js
+
 const {
   joinVoiceChannel,
   createAudioPlayer,
@@ -7,18 +9,25 @@ const {
 } = require("@discordjs/voice");
 const prism = require("prism-media");
 const fs = require("fs");
-const axios = require("axios");
 const FormData = require("form-data");
 const { spawn } = require("child_process");
 const ffmpegPath = require("ffmpeg-static");
 
-const activeConnections = new Map(); // Track connections per guild
+const activeConnections = new Map();
 
+/**
+ * Joins voice channel and sets up for listening
+ *
+ * @param {Object} message - Discord message object
+ * @returns {Object|null} Voice connection or null if failed
+ */
 async function joinVoiceChannelAndListen(message) {
   const channel = message.member.voice.channel;
-  if (!channel) return message.reply("You need to be in a voice channel.");
+  if (!channel) {
+    message.reply("You need to be in a voice channel.");
+    return null;
+  }
 
-  // Join the voice channel
   const connection = joinVoiceChannel({
     channelId: channel.id,
     guildId: channel.guild.id,
@@ -32,7 +41,13 @@ async function joinVoiceChannelAndListen(message) {
   return connection;
 }
 
-// Capture voice and save it
+/**
+ * Captures audio from user and saves to file
+ *
+ * @param {Object} connection - Voice connection
+ * @param {string} userId - User ID to capture audio from
+ * @returns {Promise<string>} Path to saved audio file
+ */
 async function captureAudio(connection, userId) {
   return new Promise((resolve, reject) => {
     const receiver = connection.receiver;
@@ -41,22 +56,18 @@ async function captureAudio(connection, userId) {
     const opusStream = receiver.subscribe(userId, {
       end: {
         behavior: EndBehaviorType.AfterSilence,
-        duration: 6000, // Increase duration to capture more audio
+        duration: 6000,
       },
     });
-    console.log(receiver);
+
     opusStream.on("data", (chunk) => {
-      console.log(
-        `[DEBUG] Received ${chunk.length} bytes of audio from ${userId}`
-      );
+      console.log(`[DEBUG] Received ${chunk.length} bytes of audio from ${userId}`);
     });
 
     const pcmStream = opusStream.pipe(
       new prism.opus.Decoder({ frameSize: 960, channels: 1, rate: 48000 })
     );
-    console.log("Finished listening for audio...");
 
-    console.log("Creating audio stream to file...");
     const filePath = `./recorded_audio_${userId}.pcm`;
     const mp3FilePath = `./recorded_audio_${userId}.mp3`;
     const fileStream = fs.createWriteStream(filePath);
@@ -71,18 +82,10 @@ async function captureAudio(connection, userId) {
     fileStream.on("finish", async () => {
       console.log("[DEBUG] File finished writing, filePath:", filePath);
 
-      // Check the file size
       const stats = fs.statSync(filePath);
       if (stats.size < 1000) {
-        // Adjust threshold as needed
-        console.error(
-          "[DEBUG] Insufficient audio data captured (file size: " +
-            stats.size +
-            " bytes)"
-        );
-        return reject(
-          new Error("Not enough audio captured. Please speak a bit longer.")
-        );
+        console.error(`[DEBUG] Insufficient audio data captured (file size: ${stats.size} bytes)`);
+        return reject(new Error("Not enough audio captured. Please speak a bit longer."));
       }
 
       try {
@@ -96,78 +99,82 @@ async function captureAudio(connection, userId) {
   });
 }
 
-// Transcribe audio with OpenAI Whisper
+/**
+ * Transcribes audio using OpenAI Whisper
+ *
+ * @param {string} filePath - Path to audio file
+ * @returns {Promise<string>} Transcribed text
+ */
 async function transcribeAudio(filePath) {
+  const openai = await import("../openai/openai.mjs").then((m) => m.default);
+
   console.log("Transcribing audio...");
-  const formData = new FormData();
-  formData.append("file", fs.createReadStream(filePath));
-  formData.append("model", "whisper-1");
 
-  console.log("Sending request to OpenAI...");
-  const response = await axios.post(
-    "https://api.openai.com/v1/audio/transcriptions",
-    formData,
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_APIKEY}`,
-        ...formData.getHeaders(),
-      },
-    }
-  );
-  console.log("Done sending request to OpenAI!");
+  try {
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(filePath),
+      model: "whisper-1",
+    });
 
-  if (!response.status === 400) {
-    throw new Error(
-      `Failed to transcribe audio: ${response.response.data.error}`
-    );
+    return transcription.text;
+  } catch (error) {
+    throw new Error(`Failed to transcribe audio: ${error.message}`);
   }
-
-  return response.data.text;
 }
 
-// Get a response from ChatGPT
+/**
+ * Gets ChatGPT response for transcribed text
+ *
+ * @param {string} text - Input text
+ * @returns {Promise<string>} AI response
+ */
 async function getChatGPTResponse(text) {
-  const response = await axios.post(
-    "https://api.openai.com/v1/chat/completions",
-    {
+  const openai = await import("../openai/openai.mjs").then((m) => m.default);
+
+  try {
+    const completion = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [{ role: "user", content: text }],
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_APIKEY}`,
-        "Content-Type": "application/json",
-      },
-    }
-  );
+    });
 
-  return response.data.choices[0].message.content;
+    return completion.choices[0].message.content;
+  } catch (error) {
+    throw new Error(`Failed to get ChatGPT response: ${error.message}`);
+  }
 }
 
-// Convert response text to speech
+/**
+ * Converts text to speech using OpenAI TTS
+ *
+ * @param {string} text - Text to convert
+ * @returns {Promise<string>} Path to audio file
+ */
 async function textToSpeech(text) {
-  const response = await axios.post(
-    "https://api.openai.com/v1/audio/speech",
-    {
-      model: "tts-1",
-      input: text,
-      voice: "nova",
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_APIKEY}`,
-        "Content-Type": "application/json",
-      },
-      responseType: "arraybuffer",
-    }
-  );
+  const openai = await import("../openai/openai.mjs").then((m) => m.default);
 
-  const filePath = "./response.mp3";
-  fs.writeFileSync(filePath, Buffer.from(response.data));
-  return filePath;
+  try {
+    const mp3 = await openai.audio.speech.create({
+      model: "tts-1",
+      voice: "nova",
+      input: text,
+    });
+
+    const buffer = Buffer.from(await mp3.arrayBuffer());
+    const filePath = "./response.mp3";
+    fs.writeFileSync(filePath, buffer);
+
+    return filePath;
+  } catch (error) {
+    throw new Error(`Failed to generate speech: ${error.message}`);
+  }
 }
 
-// Play the AI-generated response in voice chat
+/**
+ * Plays audio file in voice channel
+ *
+ * @param {Object} connection - Voice connection
+ * @param {string} filePath - Path to audio file
+ */
 async function playAudio(connection, filePath) {
   const player = createAudioPlayer();
   const resource = createAudioResource(filePath);
@@ -176,42 +183,64 @@ async function playAudio(connection, filePath) {
   connection.subscribe(player);
 
   player.on(AudioPlayerStatus.Idle, () => {
-    console.log("Finished playing.");
+    console.log("Finished playing audio.");
   });
 }
 
-// Full conversation loop
+/**
+ * Handles complete voice chat interaction flow
+ *
+ * @param {Object} connection - Voice connection
+ * @param {string} userId - User ID
+ */
 async function voiceChatInteraction(connection, userId) {
-  const filePath = await captureAudio(connection, userId);
-  console.log("Audio captured completed.");
-  const transcribedText = await transcribeAudio(filePath);
-  console.log(`Transciption complete! User said: ${transcribedText}`);
+  try {
+    const filePath = await captureAudio(connection, userId);
+    console.log("Audio capture completed.");
 
-  const chatResponse = await getChatGPTResponse(transcribedText);
-  console.log(`ChatGPT says: ${chatResponse}`);
+    const transcribedText = await transcribeAudio(filePath);
+    console.log(`Transcription complete! User said: ${transcribedText}`);
 
-  const ttsFile = await textToSpeech(chatResponse);
-  await playAudio(connection, ttsFile);
+    const chatResponse = await getChatGPTResponse(transcribedText);
+    console.log(`ChatGPT says: ${chatResponse}`);
+
+    const ttsFile = await textToSpeech(chatResponse);
+    await playAudio(connection, ttsFile);
+
+    // Clean up temporary files
+    fs.unlinkSync(filePath);
+    fs.unlinkSync(ttsFile);
+  } catch (error) {
+    console.error("Voice chat interaction error:", error);
+  }
 }
 
+/**
+ * Converts PCM audio to MP3 format
+ *
+ * @param {string} inputPath - Input PCM file path
+ * @param {string} outputPath - Output MP3 file path
+ * @param {string} pcmFormat - PCM format (default: "s16le")
+ * @returns {Promise<string>} Output file path
+ */
 function convertPCMToMP3(inputPath, outputPath, pcmFormat = "s16le") {
   return new Promise((resolve, reject) => {
     const ffmpegArgs = [
       "-y",
       "-f",
-      pcmFormat, // Specify the PCM format: try "s16le" or "f32le"
+      pcmFormat,
       "-ar",
-      "48000", // Sample rate: 48000 Hz
+      "48000",
       "-ac",
-      "1", // Mono audio
+      "1",
       "-i",
-      inputPath, // Input file
+      inputPath,
       "-acodec",
-      "libmp3lame", // Use libmp3lame for encoding
-      outputPath, // Output file
+      "libmp3lame",
+      outputPath,
     ];
 
-    console.log("Starting conversion with FFmpeg...");
+    console.log("Starting PCM to MP3 conversion with FFmpeg...");
     const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs);
 
     ffmpegProcess.stderr.on("data", (data) => {
